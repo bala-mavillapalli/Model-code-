@@ -1,0 +1,52 @@
+import pandas as pd
+import numpy as np
+import joblib
+
+# Load the original data
+df = pd.read_csv('data.csv')
+df['Time'] = pd.to_datetime(df['Time'])
+
+# Remove 'Unnamed: 0' column 
+if 'Unnamed: 0' in df.columns:
+    df = df.drop('Unnamed: 0', axis=1)
+
+# Load the saved model, scaler, and selected features
+model = joblib.load('xgb_model.joblib')
+scaler = joblib.load('scaler_all_features.joblib')
+selected_features = joblib.load('selected_features.joblib')
+
+
+# Make predictions for the next month
+last_date = df['Time'].max()
+next_month_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=30*24, freq='H')
+next_month_df = pd.DataFrame({'Time': next_month_dates})
+
+# Create time-based features for the next month
+next_month_df['hour'] = next_month_df['Time'].dt.hour
+next_month_df['month'] = next_month_df['Time'].dt.month
+
+# Use historical patterns for other features
+for feature in selected_features:
+    if feature not in ['hour', 'month']:
+        next_month_df[feature] = df[feature].iloc[-len(next_month_df):].values
+
+# Ensure all required features are present without duplicates
+required_features = list(dict.fromkeys(selected_features + ['hour', 'month']))
+
+
+# Scale  the selected features
+X_next_month = next_month_df[required_features]
+X_next_month_scaled = scaler.transform(X_next_month)
+X_next_month_scaled_df = pd.DataFrame(X_next_month_scaled, columns=required_features)
+
+# Select only the features used by the model
+X_next_month_final = X_next_month_scaled_df[selected_features]
+
+# Make predictions
+predictions_next_month = np.maximum(model.predict(X_next_month_final), 0)
+
+# Add predictions to the DataFrame and save to CSV
+next_month_df['Predicted_SOG'] = predictions_next_month
+next_month_df[['Time', 'Predicted_SOG']].to_csv('one_month_prediction2.csv', index=False)
+
+print("Predictions have been saved to 'one_month_prediction2.csv'")
