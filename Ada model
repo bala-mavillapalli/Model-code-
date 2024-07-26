@@ -14,7 +14,7 @@ np.random.seed(0)
 df = pd.read_csv('data.csv')
 print("Missing values in the dataset:", df.isnull().sum().sum())
 
-# Dropping the 'Unnamed: 0' column if it exists
+# Dropping the 'Unnamed: 0' column if it is not useful
 if 'Unnamed: 0' in df.columns:
     df = df.drop(columns=['Unnamed: 0'])
 
@@ -53,8 +53,8 @@ if 'SOG' in top_features:
 X = df[top_features]
 y = df['SOG']
 
-# Splitting the data into training and testing sets (80% training, 20% testing)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, shuffle=False)
+# Splitting the data into training and testing sets (75% training, 25% testing)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, shuffle=False)
 
 # Feature scaling using StandardScaler
 scaler = StandardScaler()
@@ -77,7 +77,7 @@ param_dist = {
         DecisionTreeRegressor(max_depth=5)]
 }
 
-# RandomizedSearchCV with a limited number of iterations
+# RandomizedSearchCV 
 random_search = RandomizedSearchCV(ada, param_distributions=param_dist, n_iter=30, cv=kfold, scoring='neg_mean_squared_error', random_state=0)
 
 # Fit RandomizedSearchCV
