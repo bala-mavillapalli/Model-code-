@@ -1,0 +1,115 @@
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, KFold, RandomizedSearchCV
+from sklearn.ensemble import AdaBoostRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+import numpy as np
+import joblib
+
+# Seed for reproducibility
+np.random.seed(0)
+
+# Loading CSV file into a DataFrame
+df = pd.read_csv('data.csv')
+print("Missing values in the dataset:", df.isnull().sum().sum())
+
+# Dropping the 'Unnamed: 0' column if it exists
+if 'Unnamed: 0' in df.columns:
+    df = df.drop(columns=['Unnamed: 0'])
+
+# Data preprocessing step
+df = df.drop_duplicates()
+
+# Convert 'Time' column to datetime and extract features
+if 'Time' in df.columns:
+    df['Time'] = pd.to_datetime(df['Time'])
+    df['hour'] = df['Time'].dt.hour
+    df['dayofweek'] = df['Time'].dt.dayofweek
+    df['month'] = df['Time'].dt.month
+    df = df.drop('Time', axis=1)
+
+# Ensure all columns are of numeric data types
+df = df.apply(pd.to_numeric, errors='coerce')
+
+# Calculate correlations excluding SOG
+features_for_correlation = [col for col in df.columns if col != 'SOG']
+correlation_with_sog = df[features_for_correlation].corrwith(df['SOG']).abs().sort_values(ascending=False)
+
+print("Correlation values with SOG:")
+print(correlation_with_sog)
+
+# Select top 15 features
+top_features = correlation_with_sog.head(15).index.tolist()
+
+print("Top 15 features based on correlation with SOG:")
+print(top_features)
+
+# Ensure SOG is not in the selected features
+if 'SOG' in top_features:
+    raise ValueError("SOG was incorrectly selected as a feature")
+
+# Splitting the data into features (X) and target (y)
+X = df[top_features]
+y = df['SOG']
+
+# Splitting the data into training and testing sets (80% training, 20% testing)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, shuffle=False)
+
+# Feature scaling using StandardScaler
+scaler = StandardScaler()
+X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
+X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
+
+# K-fold Cross Validator
+kfold = KFold(n_splits=10, shuffle=False)
+
+# AdaBoostRegressor
+ada = AdaBoostRegressor(random_state=0)
+
+# Define a parameter distribution for randomized search
+param_dist = {
+    'n_estimators': [10, 20, 30, 50, 100, 200, 500],
+    'learning_rate': [0.001, 0.01, 0.05, 0.1, 0.5, 1.0],
+'base_estimator': [
+        DecisionTreeRegressor(max_depth=1),
+        DecisionTreeRegressor(max_depth=3),
+        DecisionTreeRegressor(max_depth=5)]
+}
+
+# RandomizedSearchCV with a limited number of iterations
+random_search = RandomizedSearchCV(ada, param_distributions=param_dist, n_iter=30, cv=kfold, scoring='neg_mean_squared_error', random_state=0)
+
+# Fit RandomizedSearchCV
+random_search.fit(X_train_scaled, y_train)
+
+# Best parameters
+best_params = random_search.best_params_
+print(f"Best parameters: {best_params}")
+
+# Training AdaBoostRegressor with the best parameters
+ada_best = AdaBoostRegressor(**best_params)
+
+# Fitting the model with the best parameters
+ada_best.fit(X_train_scaled, y_train)
+
+# Predictions on the test set
+predictions_best = ada_best.predict(X_test_scaled)
+
+# Evaluating the model's performance on the test set
+mse_best = mean_squared_error(y_test, predictions_best)
+rmse_best = np.sqrt(mse_best)
+
+print(f"Mean Squared Error on Test Set with Best Parameters: {mse_best}")
+print(f"Root Mean Squared Error on Test Set with Best Parameters: {rmse_best}")
+
+# R-squared score
+r2_best = r2_score(y_test, predictions_best)
+print(f"R-squared Score on Test Set with Best Parameters: {r2_best}")
+
+# Save the model, scaler, and selected features
+joblib.dump(ada_best, 'adaboost_model.joblib')
+joblib.dump(scaler, 'scaler_all_features.joblib')
+joblib.dump(top_features, 'selected_features.joblib')
+
+print("Model, scaler, and selected features have been saved.")
